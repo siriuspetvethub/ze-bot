@@ -107,8 +107,27 @@ app.post('/webhook/ze-task-update', async (req, res) => {
     reschedule:     () => `${person || 'Alguém'} reagendou *[${project}]* ${task}\n   📅 Novo prazo: *${deadline || ''}*`,
     blocked:        () => `${person || 'Alguém'} travou *[${project}]* ${task}${reason ? `\n   🚧 ${reason}` : ''}`,
     task_created:   () => `${person || 'Alguém'} criou tarefa em *[${project}]*\n   📋 ${task}`,
+    task_deleted:   () => `${person || 'Alguém'} excluiu tarefa em *[${project}]*\n   🗑️ ${task}`,
     task_done_for_requester: () => `✅ *${target || 'Alguém'}* concluiu uma tarefa solicitada por *${person || 'alguém'}*\n   📋 *[${project}]* ${task}\n   👉 ${person ? person.split(/[,;\/]/)[0].trim() : 'solicitante'}, sua próxima ação está liberada.`,
   };
+
+  // Ações que pingam @ no grupo (criação, conclusão pro solicitante, travamento).
+  // Demais ações vão silenciosas — visíveis no grupo, sem notificar celular.
+  const LOUD_ACTIONS = new Set(['task_created', 'task_done_for_requester', 'blocked']);
+
+  function namesToMentions(namesStr) {
+    if (!namesStr) return { jids: [], tags: '' };
+    const names = String(namesStr).split(/[,;\/&]| e /).map(n => n.trim()).filter(Boolean);
+    const phones = [];
+    for (const n of names) {
+      const phone = config.TEAM_PHONES[n];
+      if (phone && !phones.includes(phone)) phones.push(phone);
+    }
+    return {
+      jids: phones.map(p => `${p}@s.whatsapp.net`),
+      tags: phones.map(p => `@${p}`).join(' ')
+    };
+  }
 
   const evolution = require('./src/clients/evolution');
   const tLink  = taskId
@@ -158,10 +177,27 @@ app.post('/webhook/ze-task-update', async (req, res) => {
   }
 
   const textFn = LABELS[action] || (() => `${person || 'Alguém'} editou *[${project}]* ${task} (${action})`);
-  const msg = `🖥️ *Atualização pelo Dashboard*\n\n${textFn()}\n\n🔗 ${tLink}`;
-  evolution.sendText(groupId, msg).catch(err =>
-    console.error('[server] Falha ao notificar grupo (dashboard):', err.message)
-  );
+  const baseMsg = `🖥️ *Atualização pelo Dashboard*\n\n${textFn()}\n\n🔗 ${tLink}`;
+
+  if (LOUD_ACTIONS.has(action)) {
+    // Pra task_done_for_requester o "ponto focal" do ping é o solicitante (person);
+    // pra task_created e blocked é o responsável (person).
+    const { jids, tags } = namesToMentions(person);
+    if (jids.length > 0) {
+      const msgWithMention = `${baseMsg}\n\ncc ${tags}`;
+      evolution.sendTextWithMentions(groupId, msgWithMention, jids).catch(err =>
+        console.error('[server] Falha ao notificar grupo (loud):', err.message)
+      );
+    } else {
+      evolution.sendText(groupId, baseMsg).catch(err =>
+        console.error('[server] Falha ao notificar grupo (loud, sem phone):', err.message)
+      );
+    }
+  } else {
+    evolution.sendText(groupId, baseMsg).catch(err =>
+      console.error('[server] Falha ao notificar grupo (dashboard):', err.message)
+    );
+  }
 });
 
 /**
