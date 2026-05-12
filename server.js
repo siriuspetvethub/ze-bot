@@ -226,14 +226,10 @@ app.post('/admin/trigger/:job', async (req, res) => {
   }
   const { job } = req.params;
   const jobs = {
-    morning:         () => alertEngine.runMorning(),
-    stuck:           () => alertEngine.runStuckWatchdog(),
-    afternoon:       () => alertEngine.runAfternoon(),
-    nag:             () => alertEngine.runNagCheck(),
-    contexto:        () => alertEngine.runContextoVivoBriefing(),
-    monday:          () => alertEngine.runMondayContextoReminder(),
-    report:          () => report.run(),
-    weekly:          () => report.runWeekly(),
+    morning:          () => alertEngine.runMorning(),
+    afternoon:        () => alertEngine.runAfternoon(),
+    report:           () => report.run(),
+    weekly:           () => report.runWeekly(),
     'daily-briefing': () => dailyBriefing.run(req.body.taskIds || []),
   };
   if (!jobs[job]) return res.status(404).json({ ok: false, error: 'job not found', available: Object.keys(jobs) });
@@ -243,25 +239,13 @@ app.post('/admin/trigger/:job', async (req, res) => {
 
 // --- Cron Jobs ---
 // Container roda com TZ=America/Sao_Paulo — horários são BRT direto.
+// Zé é puramente informativo: só briefings + relatórios. Nada de nag/cobrança.
 
 // Briefing matinal personalizado: 8h BRT, seg-sex
 cron.schedule('0 8 * * 1-5', () => {
   if (paused) return;
   console.log('[cron] Briefing matinal 8h BRT');
   alertEngine.runMorning().catch(err => console.error('[cron] runMorning:', err.message));
-});
-
-// Watchdog tarefas travadas: 8h15 BRT, seg-sex
-cron.schedule('15 8 * * 1-5', () => {
-  if (paused) return;
-  console.log('[cron] Watchdog travadas 8h15');
-  alertEngine.runStuckWatchdog().catch(err => console.error('[cron] runStuckWatchdog:', err.message));
-});
-
-// Nag check: a cada 5 min, das 9h-18h BRT, seg-sex
-cron.schedule('*/5 9-18 * * 1-5', () => {
-  if (paused) return;
-  alertEngine.runNagCheck().catch(err => console.error('[cron] runNagCheck:', err.message));
 });
 
 // Alerta vespertino: 16h BRT, seg-sex
@@ -271,25 +255,11 @@ cron.schedule('0 16 * * 1-5', () => {
   alertEngine.runAfternoon().catch(err => console.error('[cron] runAfternoon:', err.message));
 });
 
-// Contexto vivo + cobrança de atualização: 17h BRT, todos os dias úteis
-cron.schedule('0 17 * * 1-5', () => {
-  if (paused) return;
-  console.log('[cron] Contexto vivo 17h BRT');
-  alertEngine.runContextoVivoBriefing().catch(err => console.error('[cron] runContextoVivoBriefing:', err.message));
-});
-
 // Relatório diário: 19h BRT, seg-sex
 cron.schedule('0 19 * * 1-5', () => {
   if (paused) return;
   console.log('[cron] Relatório diário 19h');
   report.run().catch(err => console.error('[cron] report:', err.message));
-});
-
-// Lembrete revisão contexto vivo: toda segunda 9h BRT
-cron.schedule('0 9 * * 1', () => {
-  if (paused) return;
-  console.log('[cron] Lembrete contexto vivo segunda 9h');
-  alertEngine.runMondayContextoReminder().catch(err => console.error('[cron] runMondayContextoReminder:', err.message));
 });
 
 // Dashboard semanal: sextas 8h BRT
