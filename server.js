@@ -131,8 +131,8 @@ app.post('/webhook/ze-task-update', async (req, res) => {
     // Mensagem no grupo Sirius com menção real no WhatsApp (vira notificação no celular)
     if (phone) {
       const jid = `${phone}@s.whatsapp.net`;
-      // Append @phone no fim pra o WhatsApp renderizar a menção
-      const groupMsgWithMention = `${groupMsg}\n\n_cc @${phone}_`;
+      // Append @phone no fim pra o WhatsApp renderizar a menção (sem italic — interfere no parser)
+      const groupMsgWithMention = `${groupMsg}\n\ncc @${phone}`;
       evolution.sendTextWithMentions(groupId, groupMsgWithMention, [jid]).catch(err =>
         console.error('[server] Falha ao notificar grupo (mention):', err.message)
       );

@@ -41,6 +41,7 @@ async function sendTextWithMentions(number, text, mentionedJids) {
   const resp = await client.post(`/message/sendText/${instance}`, {
     number,
     text,
+    mentionsEveryOne: false,
     mentioned: mentionedJids
   });
   return resp.data;
