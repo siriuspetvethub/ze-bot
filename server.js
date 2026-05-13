@@ -220,6 +220,42 @@ app.post('/admin/resume', (req, res) => {
   res.json({ ok: true, paused: false, message: 'Zé Bot reativado. Automações voltaram ao normal.' });
 });
 
+/**
+ * Recebe resumo do checkup diário do painel operacional e dispara mensagem
+ * no WhatsApp do Thiago (ADMIN_PHONE). Chamado pelo agente cloud do /schedule
+ * que roda todo dia útil às 8h.
+ *
+ * POST /admin/checkup-notify?token=<ADMIN_TOKEN>
+ * Body: { date_br, p0, p1, p2, top3_lines, report_path }
+ */
+app.post('/admin/checkup-notify', async (req, res) => {
+  if (req.query.token !== ADMIN_TOKEN) {
+    return res.status(401).json({ ok: false, error: 'unauthorized' });
+  }
+  const { date_br, p0 = 0, p1 = 0, p2 = 0, top3_lines = '', report_path = '' } = req.body || {};
+  if (!date_br) return res.status(400).json({ ok: false, error: 'date_br obrigatório (DD/MM)' });
+
+  const total = Number(p0) + Number(p1) + Number(p2);
+  let text;
+  if (total === 0) {
+    text = `☀️ Checkup do painel — ${date_br}\n\nTudo limpo. Smoke test OK em Chromium + WebKit, 0 bugs novos no feedback do time, logs do Zé sem exceptions.`;
+  } else {
+    text = `☀️ Checkup do painel — ${date_br}\n\nP0: ${p0} · P1: ${p1} · P2: ${p2}`;
+    if (top3_lines) text += `\n\nTop 3:\n${top3_lines}`;
+    if (report_path) text += `\n\nRelatorio completo: ${report_path}`;
+    text += `\n\nResponde "aplicar" quando abrir o Claude pra eu seguir com os fixes.`;
+  }
+
+  try {
+    const evolution = require('./src/clients/evolution');
+    const result = await evolution.sendText(config.ADMIN_PHONE, text);
+    res.json({ ok: true, sent: true, id: result && result.key && result.key.id });
+  } catch (err) {
+    console.error('[admin/checkup-notify] erro:', err.message);
+    res.status(500).json({ ok: false, error: err.message });
+  }
+});
+
 app.post('/admin/trigger/:job', async (req, res) => {
   if (req.query.token !== ADMIN_TOKEN) {
     return res.status(401).json({ ok: false, error: 'unauthorized' });
