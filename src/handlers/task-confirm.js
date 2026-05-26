@@ -73,6 +73,47 @@ async function clearPending(row) {
 }
 
 /**
+ * Marca uma confirmação pendente como aprovada/executada
+ * (usado quando a ação não é de tarefa — ex: update_contexto)
+ * @param {number} row
+ */
+async function markApproved(row) {
+  if (!row) return;
+  await sheets.patch({
+    sheetName: SHEET_CONFIRM,
+    row,
+    updates: [{ col: 'status', value: 'approved' }]
+  });
+}
+
+/**
+ * Salva confirmação pendente para um update no Contexto Vivo
+ * Reutiliza a aba ZE_PENDING_CONFIRM com intended_action='update_contexto'
+ * @param {string} phone
+ * @param {{slug, project, field, value, mode, cliente}} data
+ */
+async function savePendingContexto(phone, data) {
+  const preview = (data.value || '').slice(0, 60);
+  await sheets.post({
+    sheetName: SHEET_CONFIRM,
+    values: [
+      phone,
+      '',                                  // task_row (n/a)
+      'CONTEXTO_VIVO',                     // task_sheet (marcador)
+      `${data.field}: ${preview}`,         // task (preview legível)
+      data.project || '',                  // project
+      '',                                  // person
+      '',                                  // task_status
+      '',                                  // deadline
+      'update_contexto',                   // intended_action
+      JSON.stringify(data),                // intent_json (payload completo)
+      'pending',
+      new Date().toISOString()
+    ]
+  });
+}
+
+/**
  * Resolve e retorna dados para executar a ação confirmada
  * Rebusca a tarefa no Sheets pelo _row para ter dados atualizados
  * @param {object} pending - registro do ZE_PENDING_CONFIRM
@@ -152,4 +193,4 @@ async function saveAmbiguous(phone, topMatches, intent) {
   });
 }
 
-module.exports = { getPending, savePending, saveAmbiguous, clearPending, resolvePending, buildConfirmMessage };
+module.exports = { getPending, savePending, saveAmbiguous, clearPending, markApproved, resolvePending, buildConfirmMessage, savePendingContexto };

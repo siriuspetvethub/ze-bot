@@ -18,6 +18,7 @@
 const sheets    = require('../clients/sheets');
 const evolution = require('../clients/evolution');
 const config    = require('../config');
+const { frame } = require('../formatters/sirius-frame');
 
 const SHEET_TASKS     = 'BACKEND DASH ';
 const SHEET_REMINDERS = 'ZE_REMINDERS';
@@ -178,7 +179,7 @@ async function runMorning() {
       const travadas    = sortByPrio(minhas.filter(t => (t.status || '').toLowerCase().includes('travado')));
       const stagnadas   = sortByPrio(minhas.filter(t => isStagnant(t, hoje)));
 
-      let msg = `🌅 *Bom dia, ${personName}!*\n\n`;
+      let body = `🌅 *Bom dia, ${personName}.*\n\n`;
 
       const fmtTask = (t, showDeadline = false) => {
         const prio  = t.priority === 'alta' ? '🔴 ' : t.priority === 'media' ? '🟡 ' : '';
@@ -197,51 +198,56 @@ async function runMorning() {
       };
 
       if (overdue.length > 0) {
-        msg += `⚠️ *${overdue.length} em atraso:*\n`;
-        overdue.slice(0, 3).forEach(t => { msg += fmtTask(t, true); });
-        if (overdue.length > 3) msg += `  ... e mais ${overdue.length - 3}\n`;
-        msg += '\n';
+        body += `⚠️ *${overdue.length} em atraso:*\n`;
+        overdue.slice(0, 3).forEach(t => { body += fmtTask(t, true); });
+        if (overdue.length > 3) body += `  ... e mais ${overdue.length - 3}\n`;
+        body += '\n';
       }
 
       if (venteHoje.length > 0) {
-        msg += `🔴 *${venteHoje.length} vencem HOJE:*\n`;
-        venteHoje.forEach(t => { msg += fmtTask(t); });
-        msg += '\n';
+        body += `🔴 *${venteHoje.length} vencem HOJE:*\n`;
+        venteHoje.forEach(t => { body += fmtTask(t); });
+        body += '\n';
       }
 
       if (amanhaTasks.length > 0) {
-        msg += `🟡 *Vencem amanhã (${amanhaTasks.length}):*\n`;
-        amanhaTasks.forEach(t => { msg += fmtTask(t); });
-        msg += '\n';
+        body += `🟡 *Vencem amanhã (${amanhaTasks.length}):*\n`;
+        amanhaTasks.forEach(t => { body += fmtTask(t); });
+        body += '\n';
       }
 
       if (travadas.length > 0) {
-        msg += `🔴 *${travadas.length} travada(s):*\n`;
+        body += `🔴 *${travadas.length} travada(s):*\n`;
         travadas.forEach(t => {
-          msg += `  • [${t.project}] ${t.task}\n`;
-          if (t.blocker) msg += `     🚧 ${t.blocker}\n`;
-          msg += `     🔗 ${config.taskLink(t)}\n`;
+          body += `  • [${t.project}] ${t.task}\n`;
+          if (t.blocker) body += `     🚧 ${t.blocker}\n`;
+          body += `     🔗 ${config.taskLink(t)}\n`;
         });
-        msg += '\n';
+        body += '\n';
       }
 
       if (stagnadas.length > 0) {
-        msg += `😴 *${stagnadas.length} estagnada(s) (em andamento >5 dias sem update):*\n`;
+        body += `😴 *${stagnadas.length} estagnada(s) (em andamento >5 dias sem update):*\n`;
         stagnadas.slice(0, 2).forEach(t => {
-          msg += `  • [${t.project}] ${t.task}\n`;
-          if (t.nextAction) msg += `     ⚡ _${t.nextAction}_\n`;
-          msg += `     🔗 ${config.taskLink(t)}\n`;
+          body += `  • [${t.project}] ${t.task}\n`;
+          if (t.nextAction) body += `     ⚡ _${t.nextAction}_\n`;
+          body += `     🔗 ${config.taskLink(t)}\n`;
         });
-        msg += '\n';
+        body += '\n';
       }
 
       if (semana.length > 0) {
-        msg += `📅 *Esta semana (${semana.length}):*\n`;
-        semana.slice(0, 4).forEach(t => { msg += fmtTask(t, true); });
-        msg += '\n';
+        body += `📅 *Esta semana (${semana.length}):*\n`;
+        semana.slice(0, 4).forEach(t => { body += fmtTask(t, true); });
+        body += '\n';
       }
 
-      msg += `📊 ${config.DASHBOARD_URL}`;
+      const msg = frame({
+        contextLabel: 'Alerta matinal · 08h',
+        body: body.trimEnd(),
+        linkLabel: 'painel operacional',
+        link: config.DASHBOARD_URL,
+      });
 
       await evolution.sendText(phone, msg);
       await new Promise(r => setTimeout(r, 1500));
@@ -308,19 +314,8 @@ async function runContextoVivoBriefing() {
       console.warn('[alert-engine] Falha ao enviar ao grupo:', e.message)
     );
 
-    // Cobrar donos que não atualizaram
-    for (const { cliente, donoNome } of naoAtualizados) {
-      const phone = config.TEAM_PHONES[donoNome];
-      if (!phone) continue;
-      const msg = `📋 ${donoNome}, o contexto vivo de *${cliente}* ainda não foi atualizado hoje.\n\nAtualiza ali no dashboard? Só editar o campo "contexto" do projeto. 🙏\n📊 ${config.DASHBOARD_URL}`;
-      await evolution.sendText(phone, msg).catch(() => {});
-      await new Promise(r => setTimeout(r, 1000));
-    }
-
-    if (naoAtualizados.length > 0) {
-      const lista = naoAtualizados.map(({ cliente }) => `• ${cliente}`).join('\n');
-      await sendToManagers(`📋 *${naoAtualizados.length} contexto(s) não atualizado(s) hoje:*\n\n${lista}\n\nJá cobrei os responsáveis.`);
-    }
+    // Snapshot 17h é só visibilidade pro grupo — a cobrança individual fica
+    // pro job das 18h (seg-qui) / 12h (sex), que pede atualização via WhatsApp.
 
   } catch (err) {
     console.error('[alert-engine] Erro no contexto vivo 17h:', err.message);
@@ -850,6 +845,67 @@ async function checkStalledApprovals(tasks) {
   }
 }
 
+// ─────────────────────────────────────────────────────────────
+// FIM DO DIA — convoca responsáveis a atualizar Contexto Vivo VIA WHATSAPP
+// Seg-Qui 18h BRT · Sex 12h BRT
+// Agrupa projetos por pessoa (primeiro nome → TEAM_PHONES) e manda 1 DM consolidada.
+// Pula projetos com status pausado/pausa.
+// ─────────────────────────────────────────────────────────────
+
+async function runEndOfDayContextoPrompt() {
+  console.log('[alert-engine] Fim do dia — convocar contexto vivo via WhatsApp');
+  try {
+    const contextoVivo = await sheets.getContextoVivo().catch(() => ({}));
+    const slugs = Object.keys(contextoVivo);
+    if (slugs.length === 0) return;
+
+    // Agrega projetos por primeiro nome do responsável (qualquer role: dono/comercial/trafego/...)
+    const byPerson = {};
+    for (const slug of slugs) {
+      const ctx = contextoVivo[slug];
+      if (!ctx || !ctx.cliente) continue;
+      const status = String(ctx.status || '').toLowerCase();
+      if (status === 'pausa' || status === 'pausado') continue;
+
+      const seen = new Set(); // evita duplicar quando mesma pessoa aparece em vários roles
+      for (const name of Object.values(ctx.responsaveis || {})) {
+        if (!name) continue;
+        const firstName = String(name).trim().split(/\s+/)[0];
+        if (!firstName || seen.has(firstName)) continue;
+        seen.add(firstName);
+        if (!config.TEAM_PHONES[firstName]) continue; // só time interno
+        if (!byPerson[firstName]) byPerson[firstName] = [];
+        byPerson[firstName].push({ cliente: ctx.cliente, slug });
+      }
+    }
+
+    const nomes = Object.keys(byPerson);
+    if (nomes.length === 0) return;
+
+    for (const nome of nomes) {
+      const phone = config.TEAM_PHONES[nome];
+      const projects = byPerson[nome];
+      const lista = projects.map(p => `  • ${p.cliente}`).join('\n');
+      const msg = `🌙 *Fim do dia, ${nome}!*\n\n` +
+        `Hora de atualizar o Contexto Vivo. Você é responsável por:\n\n${lista}\n\n` +
+        `Responde aqui mesmo que eu gravo no painel — sem precisar abrir nada. Exemplos:\n` +
+        `  • "atualiza contexto do <PROJ>: <texto>"\n` +
+        `  • "blocker no <PROJ>: <texto>"\n` +
+        `  • "próxima ação <PROJ>: <texto>"\n` +
+        `  • "decisão <PROJ>: <texto>"`;
+      await evolution.sendText(phone, msg).catch(err =>
+        console.warn(`[alert-engine] Falha DM fim-do-dia para ${nome}:`, err.message)
+      );
+      await new Promise(r => setTimeout(r, 1200));
+    }
+
+    const resumo = nomes.map(n => `• *${n}* (${byPerson[n].length} projeto${byPerson[n].length > 1 ? 's' : ''})`).join('\n');
+    await sendToManagers(`🌙 *Convocação fim-do-dia enviada*\n\nChamei ${nomes.length} pessoa(s) pra atualizar o Contexto Vivo via WhatsApp:\n\n${resumo}`);
+  } catch (err) {
+    console.error('[alert-engine] Erro no fim-do-dia contexto:', err.message);
+  }
+}
+
 module.exports = {
   runMorning,
   runAfternoon,
@@ -857,5 +913,6 @@ module.exports = {
   runStuckWatchdog,
   runContextoVivoBriefing,
   runMondayContextoReminder,
+  runEndOfDayContextoPrompt,
   checkStalledApprovals
 };

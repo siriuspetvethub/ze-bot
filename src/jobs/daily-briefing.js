@@ -6,6 +6,7 @@
 const sheets    = require('../clients/sheets');
 const evolution = require('../clients/evolution');
 const config    = require('../config');
+const { frame } = require('../formatters/sirius-frame');
 
 const STATUS_FECHADOS = ['feito', 'concluido', 'cancelado'];
 
@@ -107,23 +108,29 @@ async function run(newTaskIds = []) {
 
       if (novas.length === 0 && atrasadas.length === 0) continue;
 
-      let msg = `📋 *Oi, ${personName}!* Acabei de subir as tarefas da daily de hoje.\n\n`;
+      let body = `Oi, *${personName}*. Acabei de subir as tarefas da daily de hoje.\n\n`;
 
       if (novas.length > 0) {
-        msg += `*✅ ${novas.length} nova${novas.length > 1 ? 's' : ''} pra você:*\n`;
-        novas.forEach(t => { msg += fmtTask(t, true); });
-        msg += '\n';
+        body += `*✅ ${novas.length} nova${novas.length > 1 ? 's' : ''} pra você:*\n`;
+        novas.forEach(t => { body += fmtTask(t, true); });
+        body += '\n';
       }
 
       if (atrasadas.length > 0) {
-        msg += `⚠️ *${atrasadas.length} em atraso:*\n`;
-        atrasadas.slice(0, 4).forEach(t => { msg += fmtTask(t, true); });
-        if (atrasadas.length > 4) msg += `  _... e mais ${atrasadas.length - 4}_\n`;
-        msg += '\n';
+        body += `⚠️ *${atrasadas.length} em atraso:*\n`;
+        atrasadas.slice(0, 4).forEach(t => { body += fmtTask(t, true); });
+        if (atrasadas.length > 4) body += `  _... e mais ${atrasadas.length - 4}_\n`;
+        body += '\n';
       }
 
-      msg += `_Percebeu alguma tarefa sua que não está mapeada? Me avisa aqui que eu mesmo subo no dash pra você._ 👍\n\n`;
-      msg += `📊 ${config.DASHBOARD_URL}`;
+      body += `_Percebeu alguma tarefa sua que não está mapeada? Me avisa aqui que eu mesmo subo no painel pra você._ 👍`;
+
+      const msg = frame({
+        contextLabel: 'Briefing · 08h',
+        body,
+        linkLabel: 'painel operacional',
+        link: config.DASHBOARD_URL,
+      });
 
       await evolution.sendText(phone, msg);
       console.log(`[daily-briefing] Enviado para ${personName} (${phone}) — ${novas.length} nova(s), ${atrasadas.length} atrasada(s)`);

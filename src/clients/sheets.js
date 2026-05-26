@@ -18,6 +18,7 @@ const ZE_SCHEMAS = {
   ZE_LOG:           ['timestamp', 'sender', 'intent', 'action', 'result', 'duration_ms', 'extra1', 'extra2', 'extra3'],
   ZE_KB:            ['project', 'category', 'content', 'source', 'created_at'],
   ZE_PENDING_CONFIRM: ['phone', 'task_row', 'task_sheet', 'task', 'project', 'person', 'task_status', 'deadline', 'intended_action', 'intent_json', 'status', 'created_at'],
+  ZE_HISTORY:       ['phone', 'role', 'content', 'created_at'],
 };
 const GENERIC_SHEETS = new Set(Object.keys(ZE_SCHEMAS));
 
@@ -115,4 +116,13 @@ async function getContextoVivo() {
   return resp.data.contexto || {};
 }
 
-module.exports = { get, post, patch, remove, getContextoVivo };
+/**
+ * Upserta uma linha do CONTEXTO_VIVO. O proxy SOBRESCREVE a linha inteira,
+ * então payload deve conter todos os campos atuais + o(s) que foi(ram) alterado(s).
+ */
+async function upsertContexto(payload) {
+  const resp = await client.post('', { action: 'upsertContexto', ...payload });
+  return resp.data;
+}
+
+module.exports = { get, post, patch, remove, getContextoVivo, upsertContexto };

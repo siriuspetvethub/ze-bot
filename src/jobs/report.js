@@ -5,6 +5,7 @@
 const sheets    = require('../clients/sheets');
 const evolution = require('../clients/evolution');
 const config    = require('../config');
+const { frame } = require('../formatters/sirius-frame');
 
 const SHEET_TASKS = 'BACKEND DASH ';
 const SHEET_LOG   = 'ZE_LOG';
@@ -141,9 +142,7 @@ async function run() {
 }
 
 function buildReportMessage({ reportDate, stats: s, byProject, byPerson, intentCounts, sampleAtrasadas, sampleTravadas, contextoStatus }) {
-  let msg = `📊 *Relatório Operacional — ${reportDate}*\n_Gerado pelo Zé às 19h_\n\n`;
-
-  msg += `*Visão Geral:*\n`;
+  let msg = `*Visão Geral · ${reportDate}*\n`;
   msg += `• ${s.total} tarefas no total\n`;
   msg += `• ${s.abertas} abertas | ${s.feitas} concluídas\n`;
   if (s.atrasadas > 0)      msg += `• ⚠️ *${s.atrasadas} em atraso*\n`;
@@ -226,8 +225,12 @@ function buildReportMessage({ reportDate, stats: s, byProject, byPerson, intentC
     msg += '\n';
   }
 
-  msg += `📊 Dashboard: ${config.DASHBOARD_URL}`;
-  return msg;
+  return frame({
+    contextLabel: 'Relatório · 19h',
+    body: msg.trimEnd(),
+    linkLabel: 'painel operacional',
+    link: config.DASHBOARD_URL,
+  });
 }
 
 async function runWeekly() {

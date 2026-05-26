@@ -7,6 +7,7 @@ const intentClassifier     = require('./handlers/intent-classifier');
 const sonnetResponder      = require('./handlers/sonnet-responder');
 const taskManager          = require('./handlers/task-manager');
 const taskConfirm          = require('./handlers/task-confirm');
+const updateContexto       = require('./handlers/update-contexto');
 const conversationHistory  = require('./handlers/conversation-history');
 const query                = require('./handlers/query');
 const knowledge            = require('./handlers/knowledge');
@@ -137,6 +138,7 @@ const INTENT_HANDLERS = {
   daily_goal:         null, // apenas loga + Sonnet confirma
   ask_context:        knowledge.handle,
   contexto_projeto:   handleContextoProjeto,
+  update_contexto:    updateContexto.handle,
   meeting:            meeting.handle,
   greeting:           null,
   unclear:            null
@@ -239,6 +241,37 @@ async function process(body) {
     const { isSim, isNao } = classifyYesNo(confirmText);
 
     if (isSim) {
+      // Ramo update_contexto: re-aplica payload no CONTEXTO_VIVO, sem rebusca de tarefa
+      if (pendingConfirm.intended_action === 'update_contexto') {
+        try {
+          let data = {};
+          try { data = JSON.parse(pendingConfirm.intent_json || '{}'); } catch (_) {}
+          const result = await updateContexto.execute(data);
+          await taskConfirm.markApproved(pendingConfirm._row).catch(() => {});
+          await evolution.sendText(replyTo, result.actionMessage);
+          conversationHistory.append(senderNumber, 'user', confirmText);
+          conversationHistory.append(senderNumber, 'assistant', result.actionMessage);
+
+          // Notifica o grupo Sirius que o contexto foi atualizado (auditoria + visibilidade)
+          if (result.groupNotification) {
+            const g = result.groupNotification;
+            const verb = g.mode === 'append' ? 'adicionou em' : 'atualizou';
+            const preview = (g.value || '').length > 140 ? g.value.slice(0, 140) + '…' : g.value;
+            const groupMsg = `📋 *Contexto Vivo atualizado*\n\n${person} ${verb} *${g.fieldLabel}* de *${g.project}*:\n   _"${preview}"_`;
+            const groupId = config.ADMIN_GROUP_ID.replace('@g.us', '');
+            evolution.sendText(groupId, groupMsg).catch(err =>
+              console.warn('[router] Falha ao notificar grupo (contexto):', err.message)
+            );
+          }
+
+          logInteraction({ sender: senderNumber, person, intent: 'update_contexto_confirm', actionResult: result.actionResult, duration: Date.now() - startTime });
+        } catch (err) {
+          console.error('[router] Erro ao executar update_contexto:', err.message);
+          await evolution.sendText(replyTo, 'Erro ao atualizar contexto. Pode repetir?');
+        }
+        return;
+      }
+
       try {
         const { match, intent, action } = await taskConfirm.resolvePending(pendingConfirm);
         if (!match) {
@@ -323,7 +356,7 @@ async function process(body) {
   }
 
   // --- 5. Classificar intenção com Haiku (com histórico para resolver referências) ---
-  const history = conversationHistory.get(senderNumber);
+  const history = await conversationHistory.get(senderNumber);
   const intent = await intentClassifier.classify(userMessage, history);
 
   // --- 6. Rotear para handler ---
@@ -355,7 +388,7 @@ async function process(body) {
   }
 
   // Intents com resposta estruturada: enviar direto sem passar pelo Sonnet
-  if (intentKey === 'contexto_projeto' && actionMessage) {
+  if ((intentKey === 'contexto_projeto' || intentKey === 'update_contexto') && actionMessage) {
     await evolution.sendText(replyTo, actionMessage);
     conversationHistory.append(senderNumber, 'user', userMessage);
     conversationHistory.append(senderNumber, 'assistant', actionMessage);
